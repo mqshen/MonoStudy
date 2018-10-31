@@ -21,7 +21,11 @@ class BlockHeaderStorage(val source: KesqueDataSource) extends SimpleMap[Hash, B
     * @return the new DataSource after the removals and insertions were done.
     */
   override def update(toRemove: Set[Hash], toUpsert: Map[Hash, BlockHeader]) = {
-    toUpsert foreach { case (key, value) => source.put(key, TVal(value.toBytes, -1L)) }
+    toUpsert foreach { case (key, value) =>
+      source.put(key,
+        TVal(value.toBytes, -1L)
+      )
+    }
     toRemove foreach { key => source.remove(key) }
     this
   }
@@ -39,8 +43,5 @@ class BlockHeaderStorage(val source: KesqueDataSource) extends SimpleMap[Hash, B
     * @param key
     * @return Option object with value if there exists one.
     */
-  override def get(key: Hash) = {
-    println("need to implement BlockHeaderStorage get")
-    None
-  }
+  override def get(key: Hash) = source.get(key).map(_.value.toBlockHeader)
 }

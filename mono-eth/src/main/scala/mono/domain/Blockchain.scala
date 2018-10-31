@@ -6,6 +6,8 @@ import mono.{Hash, UInt256}
 import mono.ledger.{BlockWorldState, TrieStorage}
 import mono.network.p2p.messages.PV62.BlockBody
 import mono.store.BlockchainStorages
+import mono.store.TransactionMappingStorage.TransactionLocation
+import mono.store.trienode.ReadOnlyNodeStorage
 import mono.vm.{Storage, WorldState}
 
 object Blockchain {
@@ -94,13 +96,17 @@ object Blockchain {
 class Blockchain(val storages: BlockchainStorages) extends Blockchain.I[TrieStorage, BlockWorldState] {
   private val blockHeaderStorage = storages.blockHeaderStorage
   private val blockBodyStorage = storages.blockBodyStorage
+
+  private val accountNodeStorageFor = storages.accountNodeStorageFor
+  private val storageNodeStorageFor = storages.storageNodeStorageFor
+  private val transactionMappingStorage = storages.transactionMappingStorage
   /**
     * Allows to query a blockHeader by block hash
     *
     * @param hash of the block that's being searched
     * @return [[BlockHeader]] if found
     */
-  override def getBlockHeaderByHash(hash: Hash) = ???
+  override def getBlockHeaderByHash(hash: Hash) = blockHeaderStorage.get(hash)
 
   /**
     * Allows to query a blockBody by block hash
@@ -108,7 +114,10 @@ class Blockchain(val storages: BlockchainStorages) extends Blockchain.I[TrieStor
     * @param hash of the block that's being searched
     * @return [[mono.network.p2p.messages.PV62.BlockBody]] if found
     */
-  override def getBlockBodyByHash(hash: Hash) = ???
+  override def getBlockBodyByHash(hash: Hash) = {
+    val t = blockBodyStorage.get(hash)
+    t
+  }
 
   /**
     * Returns a block hash given a block number
@@ -154,10 +163,21 @@ class Blockchain(val storages: BlockchainStorages) extends Blockchain.I[TrieStor
   }
 
   private def saveTxsLocations(blockHash: Hash, blockBody: BlockBody): Unit = {
-    //TODO
-    println("need to implement saveTotalDifficulty ")
+    blockBody.transactionList.zipWithIndex.foreach {
+      case (tx, index) => transactionMappingStorage.put(tx.hash, TransactionLocation(blockHash, index))
+    }
   }
 
   private def saveBlockNumberMapping(number: Long, hash: Hash): Unit =
     blockHeaderStorage.putBlockHash(number, hash)
+
+  //FIXME Maybe we can use this one in regular execution too and persist underlying storage when block execution is successful
+  def getReadOnlyWorldState(blockNumber: Option[Long], accountStartNonce: UInt256, stateRootHash: Option[Hash]): BlockWorldState =
+    BlockWorldState(
+      this,
+      ReadOnlyNodeStorage(accountNodeStorageFor(blockNumber)),
+      ReadOnlyNodeStorage(storageNodeStorageFor(blockNumber)),
+      accountStartNonce,
+      stateRootHash
+    )
 }

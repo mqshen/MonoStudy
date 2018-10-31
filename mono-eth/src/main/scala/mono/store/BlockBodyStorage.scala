@@ -34,8 +34,5 @@ class BlockBodyStorage(val source: KesqueDataSource) extends SimpleMap[Hash, Blo
     * @param key
     * @return Option object with value if there exists one.
     */
-  override def get(key: Hash) = {
-    println("need to implement BlockBodyStorage get")
-    None
-  }
+  override def get(key: Hash) = source.get(key).map(_.value.toBlockBody)
 }

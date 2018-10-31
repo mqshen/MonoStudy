@@ -54,4 +54,20 @@ trait SimpleMap[K, V, T <: SimpleMap[K, V, T]] {
     * @return New trie with the (key-value) pair associated with the key passed deleted from the trie.
     */
   def remove(key: K): T = update(key -> None)
+
+  /**
+    * This function deletes a (key-value) pair from the trie. If no (key-value) pair exists with the passed trie then there's no effect on it.
+    *
+    * @param key
+    * @return New trie with the (key-value) pair associated with the key passed deleted from the trie.
+    */
+  final def -(key: K): T = remove(key)
+
+  /**
+    * This function inserts a (key-value) pair into the trie. If the key is already asociated with another value it is updated.
+    *
+    * @param kv to insert
+    * @return New trie with the (key-value) pair inserted.
+    */
+  final def +(kv: (K, V)): T = put(kv._1, kv._2)
 }

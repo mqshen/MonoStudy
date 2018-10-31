@@ -46,17 +46,19 @@ object PV62 {
 
     def toBlockHeader(rlpEncodeable: RLPEncodeable): BlockHeader =
       rlpEncodeable match {
-        case RLPList(parentHash, ommersHash, beneficiary, stateRoot, transactionsRoot, receiptsRoot,
-        logsBloom, difficulty, number, gasLimit, gasUsed, unixTimestamp, extraData, mixHash, nonce) =>
-          //BlockHeader(parentHash, ommersHash, beneficiary, stateRoot, transactionsRoot, receiptsRoot,
-          //  logsBloom, rlp.toUInt256(difficulty), number, gasLimit, gasUsed, unixTimestamp, extraData, mixHash, nonce)
+        //case RLPList(parentHash, ommersHash, beneficiary, stateRoot, transactionsRoot, receiptsRoot,
+        //logsBloom, difficulty, number, gasLimit, gasUsed, unixTimestamp, extraData, mixHash, nonce) =>
+        //BlockHeader(parentHash, ommersHash, beneficiary, stateRoot, transactionsRoot, receiptsRoot,
+        //  logsBloom, rlp.toUInt256(difficulty), number, gasLimit, gasUsed, unixTimestamp, extraData, mixHash, nonce)
+        case RLPList(parentHash, stateRoot, transactionsRoot, receiptsRoot,
+          logsBloom, difficulty, number, gasLimit, gasUsed) =>
           BlockHeader(parentHash, stateRoot, transactionsRoot, receiptsRoot, logsBloom, rlp.toUInt256(difficulty), number, gasLimit, gasUsed)
       }
 
     implicit final class BlockHeaderEnc(blockHeader: BlockHeader) extends RLPSerializable {
       override def toRLPEncodable: RLPEncodeable = {
         import blockHeader._
-        RLPList(parentHash)
+        RLPList(parentHash, stateRoot, transactionsRoot, receiptsRoot, logsBloom, rlp.toRLPEncodable(difficulty), number, gasLimit, gasUsed)
       }
     }
 

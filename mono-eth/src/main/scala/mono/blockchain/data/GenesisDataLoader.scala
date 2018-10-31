@@ -12,7 +12,7 @@ import mono.domain.{Account, Block, BlockHeader, Blockchain}
 import mono.network.p2p.messages.PV62.BlockBody
 import mono.rlp.RLPImplicits._
 import mono.store.datasource.{DataSource, EphemDataSource}
-import mono.store.trienode.{ArchiveNodeStorage, NodeStorage}
+import mono.store.trienode.{ArchiveNodeStorage, NodeStorage, NodeTableStorage}
 import mono.trie.MerklePatriciaTrie
 import mono.util.BlockchainConfig
 import mono.util.Config.DbConfig
@@ -72,7 +72,8 @@ class GenesisDataLoader(
   dataSource:       DataSource,
   blockchain:       Blockchain,
   blockchainConfig: BlockchainConfig,
-  dbConfig:         DbConfig
+  dbConfig:         DbConfig,
+  accountNodeStorageFor: (Option[Long]) => NodeTableStorage
 )(implicit system: ActorSystem) {
   import GenesisDataLoader._
   private val log = Logging(system, this.getClass)
@@ -175,6 +176,15 @@ class GenesisDataLoader(
         blockchain.saveBlock(Block(header, BlockBody(Nil, Nil)))
         blockchain.saveReceipts(header.hash, Nil)
         blockchain.saveTotalDifficulty(header.hash, header.difficulty)
+
+        genesisData.alloc.zipWithIndex.foldLeft(initalRootHash) {
+          case (rootHash, (((address, AllocAccount(balance)), idx))) =>
+            val mpt = MerklePatriciaTrie[Array[Byte], Account](rootHash, accountNodeStorageFor(Some(0)))(trie.byteArraySerializable, Account.accountSerializer)
+            val paddedAddress = address.reverse.padTo(addressLength, "0").reverse.mkString
+            val account = Account(blockchainConfig.accountStartNonce, UInt256(new BigInteger(balance)), emptyTrieRootHash, emptyEvmHash)
+            mpt.put(crypto.kec256(mono.hexDecode(paddedAddress)), account).persist().rootHash
+        }
+
         Success(())
     }
   }

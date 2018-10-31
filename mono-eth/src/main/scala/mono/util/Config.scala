@@ -72,19 +72,27 @@ object BlockchainConfig {
     val blockchainConfig = clientConfig.getConfig("blockchain")
 
     new BlockchainConfig {
+      val frontierBlockNumber = blockchainConfig.getLong("frontier-block-number")
+
       val chainId = mono.hexDecode(blockchainConfig.getString("chain-id")).head
       val accountStartNonce = UInt256(blockchainConfig.getInt("account-start-nonce"))
       val customGenesisFileOpt = Try(blockchainConfig.getString("custom-genesis-file")).toOption
+
+      val isDebugTraceEnabled = blockchainConfig.getBoolean("debug-trace-enabled")
     }
   }
 }
 
 trait BlockchainConfig {
+  def frontierBlockNumber: Long
+
   def chainId: Byte
 
   def customGenesisFileOpt: Option[String]
 
   def accountStartNonce: UInt256
+
+  def isDebugTraceEnabled: Boolean
 }
 
 object TxPoolConfig {
@@ -122,4 +130,18 @@ trait MiningConfig {
   val coinbase: Address
   val activeTimeout: FiniteDuration
   val ommerPoolQueryTimeout: FiniteDuration
+}
+
+object CacheConfig {
+  def apply(clientConfig: TypesafeConfig): CacheConfig = {
+    val cacheConfig = clientConfig.getConfig("cache")
+
+    new CacheConfig {
+      val cacheSize = cacheConfig.getInt("cache-size")
+    }
+  }
+}
+
+trait CacheConfig {
+  val cacheSize: Int
 }

@@ -12,6 +12,7 @@ import mono.store.datasource.{KesqueDataSource, SharedLeveldbDataSources}
 import mono.{Mono, util}
 import mono.util.{BlockchainConfig, MiningConfig, TxPoolConfig}
 import mono.validators._
+import org.apache.kafka.common.record.CompressionType
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.Duration
@@ -38,9 +39,14 @@ class ServiceBoardExtension(system: ExtendedActorSystem) extends Extension {
   val storages = new Storages.DefaultStorages with SharedLeveldbDataSources {
     implicit protected val system = ServiceBoardExtension.this.system
 
+
+    private lazy val cacheCfg = util.CacheConfig(config)
+
     private lazy val monoPath = new File("./")//.getParentFile.getParentFile
     private lazy val configDir = new File(monoPath, "conf")
     private lazy val kafkaConfigFile = new File(configDir, "kafka.server.properties")
+
+
     private lazy val kafkaProps = {
       val props = org.apache.kafka.common.utils.Utils.loadProps(kafkaConfigFile.getAbsolutePath)
       props.put("log.dirs", util.Config.kesqueDir)
@@ -51,6 +57,8 @@ class ServiceBoardExtension(system: ExtendedActorSystem) extends Extension {
     log.info(s"Mono started using config file: $kafkaConfigFile")
 
     private val futureTables = Future.sequence(List(
+      Future(kesque.getTable(Array(KesqueDataSource.account), 4096, CompressionType.NONE, cacheCfg.cacheSize)),
+      Future(kesque.getTable(Array(KesqueDataSource.storage), 4096, CompressionType.NONE, cacheCfg.cacheSize)),
       Future(kesque.getTimedTable(Array(
         KesqueDataSource.header,
         KesqueDataSource.body,
@@ -59,11 +67,13 @@ class ServiceBoardExtension(system: ExtendedActorSystem) extends Extension {
       ), 102400))
     ))
 
-    private val List(blockTable) = Await.result(futureTables, Duration.Inf)
+    private val List(accountTable, storageTable, blockTable) = Await.result(futureTables, Duration.Inf)
 
     lazy val blockHeaderDataSource = new KesqueDataSource(blockTable, KesqueDataSource.header)
     lazy val blockBodyDataSource = new KesqueDataSource(blockTable, KesqueDataSource.body)
 
+    lazy val accountNodeDataSource = new KesqueDataSource(accountTable, KesqueDataSource.account)
+    lazy val storageNodeDataSource = new KesqueDataSource(storageTable, KesqueDataSource.storage)
   }
   // There should be only one instance, instant it here or a standalone singleton service
   val blockchain: Blockchain = Blockchain(storages)

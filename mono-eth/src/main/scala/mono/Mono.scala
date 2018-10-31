@@ -23,7 +23,7 @@ object Mono {
       log.info("mono db stopped")
     }
 
-    val genesisDataLoader = new GenesisDataLoader(serviceBoard.storages.dataSource, serviceBoard.blockchain, serviceBoard.blockchainConfig, serviceBoard.db)
+    val genesisDataLoader = new GenesisDataLoader(serviceBoard.storages.dataSource, serviceBoard.blockchain, serviceBoard.blockchainConfig, serviceBoard.db, serviceBoard.storages.accountNodeStorageFor)
     genesisDataLoader.loadGenesisData()
 
     startPendingTxService()

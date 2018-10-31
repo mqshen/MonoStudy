@@ -4,7 +4,7 @@ import java.util.Properties
 
 import kafka.server.QuotaFactory.UnboundedQuota
 import org.apache.kafka.common.TopicPartition
-import org.apache.kafka.common.record.CompressionType
+import org.apache.kafka.common.record.{CompressionType, SimpleRecord}
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 
 import scala.collection.mutable
@@ -14,6 +14,10 @@ final class Kesque(props: Properties) {
   private val replicaManager = kafkaServer.replicaManager
 
   private val topicToTable = mutable.Map[String, HashKeyValueTable]()
+
+  def getTable(topics: Array[String], fetchMaxBytes: Int = 4096, compressionType: CompressionType = CompressionType.NONE, cacheSize: Int = 10000) = {
+    topicToTable.getOrElseUpdate(topics.mkString(","), new HashKeyValueTable(topics, this, false, fetchMaxBytes, compressionType, cacheSize))
+  }
 
   def getTimedTable(topics: Array[String], fetchMaxBytes: Int = 4096, compressionType: CompressionType = CompressionType.NONE, cacheSize: Int = 10000) = {
     topicToTable.getOrElseUpdate(topics.mkString(","), new HashKeyValueTable(topics, this, true, fetchMaxBytes, compressionType, cacheSize))
@@ -72,6 +76,24 @@ final class Kesque(props: Properties) {
     (i, lastOffset)
   }
 
+  /**
+    * Should make sure the size in bytes of batched records is not exceeds the maximum configure value
+    */
+  private[kesque] def write(topic: String, records: Seq[SimpleRecord], compressionType: CompressionType) = {
+    val partition = new TopicPartition(topic, 0)
+    //val initialOffset = readerWriter.getLogEndOffset(partition) + 1 // TODO check -1L
+    val initialOffset = 0L // TODO is this useful?
+
+    val memoryRecords = kesque.buildRecords(compressionType, initialOffset, records: _*)
+    val entriesPerPartition = Map(partition -> memoryRecords)
+
+    replicaManager.appendToLocalLog(
+      internalTopicsAllowed = false,
+      isFromClient = false,
+      entriesPerPartition = entriesPerPartition,
+      requiredAcks = 0
+    )
+  }
 }
 
 final case class TKeyVal(key: Array[Byte], value: Array[Byte], timestamp: Long = -1L)

@@ -1,10 +1,10 @@
-package kesque
+package mono.util.collection
 
 /**
   * Under 4G Xmx, the expention from size 201652706 will cause OutOfMemoryError:
   * 100M records, (4 + 4) bytes x 100M = 100M * 8 = 800M
   */
-object IntIntMap {
+object IntSet {
   private val FREE_KEY = 0
   val NO_VALUE = Int.MinValue
 
@@ -13,7 +13,7 @@ object IntIntMap {
     *
     * Note that this function will return 1 when the argument is 0.
     *
-    * @param x a long integer smaller than or equal to 2<sup>62</sup>.
+    * @param _x a long integer smaller than or equal to 2<sup>62</sup>.
     * @return the least power of two greater than or equal to the specified value.
     */
   def nextPowerOfTwo(_x: Long): Long = {
@@ -39,9 +39,12 @@ object IntIntMap {
     * @return the minimum possible size for a backing array.
     * @throws IllegalArgumentException if the necessary size is larger than 2<sup>30</sup>.
     */
+  private val MAX_SIZE: Long = 1L << 30
   def arraySize(expected: Int, f: Float): Int = {
-    val s: Long = Math.max(2, nextPowerOfTwo(Math.ceil(expected / f).toLong))
-    if (s > (1 << 30)) throw new IllegalArgumentException("Too large (" + expected + " expected elements with load factor " + f + ")")
+    val s = math.max(2L, nextPowerOfTwo(math.ceil(expected / f).toLong))
+    if (s > MAX_SIZE) {
+      throw new IllegalArgumentException("Too large (" + expected + " expected elements with load factor " + f + ")")
+    }
     s.toInt
   }
 
@@ -57,38 +60,34 @@ object IntIntMap {
   // --- simple test
   def main(args: Array[String]) {
     val max = 1000000
-    val map = new IntIntMap(200, 3)
-    var n = 0
-    while (n < 3) {
-      var i = -max
-      while (i <= max) {
-        map.put(i, i + n, n)
-        i += 1
-      }
+    val map = new IntSet(200)
+    var i = -max
+    while (i <= max) {
+      map.put(i, i)
+      i += 1
+    }
 
-      i = -max
-      while (i <= max) {
-        if (map.get(i, n) != i + n) {
-          println(s"value index $n, err at $i - before remove")
-        }
-        i += 1
+    i = -max
+    while (i <= max) {
+      if (map.get(i) != i) {
+        println(s"err at $i - before remove")
       }
-      println(map.get(max, n))
+      i += 1
+    }
+    println(map.get(max))
 
-      i = -max
-      while (i <= max) {
-        map.remove(i, n)
-        i += 1
-      }
+    i = -max
+    while (i <= max) {
+      map.remove(i)
+      i += 1
+    }
 
-      i = -max
-      while (i <= max) {
-        if (map.get(i, n) != NO_VALUE) {
-          println(s"value index $n err at $i - after remove")
-        }
-        i += 1
+    i = -max
+    while (i <= max) {
+      if (map.get(i) != NO_VALUE) {
+        println(s"err at $i - after remove")
       }
-      n += 1
+      i += 1
     }
   }
 }
@@ -98,10 +97,10 @@ object IntIntMap {
   *
   * Fill factor, must be between (0 and 1)
   */
-final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
-  import IntIntMap._
+final class IntSet(initSize: Int, fillFactor: Float = 0.75f) {
+  import IntSet._
 
-  private val isCapacityByPowTwo = false
+  private val isCapacityByPowTwo = true
 
   if (fillFactor <= 0 || fillFactor >= 1) {
     throw new IllegalArgumentException("FillFactor must be in (0, 1)")
@@ -111,9 +110,9 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
   }
 
   /** Do we have 'free' key in the map? */
-  private val m_hasFreeKey: Array[Boolean] = Array.ofDim[Boolean](nValues)
+  private var m_hasFreeKey: Boolean = false
   /** Value of 'free' key */
-  private val m_freeValue: Array[Int] = Array.ofDim[Int](nValues)
+  private var m_freeValue: Int = NO_VALUE
   /** Current map size */
   private var m_size: Int = _
 
@@ -129,11 +128,20 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
 
   expendCapacity(isInit = true)
 
-  def get(key: Int, valueIndex: Int): Int = {
+  def +=(key: Int): this.type = {
+    put(key, 1)
+    this
+  }
+
+  def contains(key: Int): Boolean = {
+    get(key) == 1
+  }
+
+  def get(key: Int): Int = {
     var ptr = getStartIndex(key)
 
     if (key == FREE_KEY) {
-      return if (m_hasFreeKey(valueIndex)) m_freeValue(valueIndex) else NO_VALUE
+      return if (m_hasFreeKey) m_freeValue else NO_VALUE
     }
 
     var k = m_data(ptr)
@@ -141,7 +149,7 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
       return NO_VALUE // end of chain already
     }
     if (k == key) { // we check FREE prior to this call
-      return m_data(ptr + 1 + valueIndex)
+      return m_data(ptr + 1)
     }
 
     while (true) {
@@ -151,7 +159,7 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
         return NO_VALUE
       }
       if (k == key) {
-        return m_data(ptr + 1 + valueIndex)
+        return m_data(ptr + 1)
       }
     }
 
@@ -159,15 +167,15 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
     return NO_VALUE
   }
 
-  def put(key: Int, value: Int, valueIndex: Int): Int = {
+  def put(key: Int, value: Int): Int = {
     if (key == FREE_KEY) {
-      val ret = m_freeValue(valueIndex)
-      if (!m_hasFreeKey(valueIndex)) {
+      val ret = m_freeValue
+      if (!m_hasFreeKey) {
         m_size += 1
       }
 
-      m_hasFreeKey(valueIndex) = true
-      m_freeValue(valueIndex) = value
+      m_hasFreeKey = true
+      m_freeValue = value
       return ret
     }
 
@@ -175,15 +183,15 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
     var k = m_data(ptr)
     if (k == FREE_KEY) { // end of chain already
       m_data(ptr) = key
-      m_data(ptr + 1 + valueIndex) = value
+      m_data(ptr + 1) = value
       if (m_size >= m_threshold)
         rehash()
       else
         m_size += 1
       return NO_VALUE
     } else if (k == key) { // we check FREE prior to this call
-      val ret = m_data(ptr + 1 + valueIndex)
-      m_data(ptr + 1 + valueIndex) = value
+      val ret = m_data(ptr + 1)
+      m_data(ptr + 1) = value
       return ret
     }
 
@@ -192,15 +200,15 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
       k = m_data(ptr)
       if (k == FREE_KEY) {
         m_data(ptr) = key
-        m_data(ptr + 1 + valueIndex) = value
+        m_data(ptr + 1) = value
         if (m_size >= m_threshold)
           rehash()
         else
           m_size += 1
         return NO_VALUE
       } else if (k == key) {
-        val ret = m_data(ptr + 1 + valueIndex)
-        m_data(ptr + 1 + valueIndex) = value
+        val ret = m_data(ptr + 1)
+        m_data(ptr + 1) = value
         return ret
       }
     }
@@ -209,19 +217,19 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
     return NO_VALUE
   }
 
-  def remove(key: Int, valueIndex: Int): Int = {
+  def remove(key: Int): Int = {
     if (key == FREE_KEY) {
-      if (!m_hasFreeKey(valueIndex))
+      if (!m_hasFreeKey)
         return NO_VALUE
-      m_hasFreeKey(valueIndex) = false
+      m_hasFreeKey = false
       m_size -= 1
-      return m_freeValue(valueIndex) // value is not cleaned
+      return m_freeValue // value is not cleaned
     }
 
     var ptr = getStartIndex(key)
     var k = m_data(ptr)
     if (k == key) { // we check FREE prior to this call
-      val res = m_data(ptr + 1 + valueIndex)
+      val res = m_data(ptr + 1)
       shiftKeys(ptr)
       m_size -= 1
       return res
@@ -232,7 +240,7 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
       ptr = getNextIndex(ptr)
       k = m_data(ptr)
       if (k == key) {
-        val res = m_data(ptr + 1 + valueIndex)
+        val res = m_data(ptr + 1)
         shiftKeys(ptr)
         m_size -= 1
         return res
@@ -271,10 +279,7 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
       }
       data(last) = k
       var n = 0
-      while (n < nValues) {
-        data(last + 1 + n) = data(pos + 1 + n)
-        n += 1
-      }
+      data(last + 1) = data(pos + 1)
     }
 
     // should not be here
@@ -289,18 +294,14 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
 
     expendCapacity(isInit = false)
 
-    m_size = if (m_hasFreeKey(0)) 1 else 0
+    m_size = if (m_hasFreeKey) 1 else 0
     var i = 0
     while (i < oldLength) {
       val oldKey = oldData(i)
       if (oldKey != FREE_KEY) {
-        var n = 0
-        while (n < nValues) {
-          put(oldKey, oldData(i + 1 + n), n)
-          n += 1
-        }
+        put(oldKey, oldData(i + 1))
       }
-      i += (1 + nValues)
+      i += 2
     }
   }
 
@@ -316,21 +317,17 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
     }
 
     m_mask = if (isCapacityByPowTwo) m_capacity - 1 else m_capacity
-    m_mask2 = if (isCapacityByPowTwo) m_capacity * (1 + nValues) - 1 else m_capacity * (1 + nValues)
+    m_mask2 = if (isCapacityByPowTwo) m_capacity * 2 - 1 else m_capacity * 2
 
     m_threshold = (m_capacity * fillFactor).toInt
 
-    m_data = Array.ofDim(m_capacity * (1 + nValues))
+    m_data = Array.ofDim(m_capacity * 2)
     // should filled m_data's value positions with NO_VALUE, otherwise, for example, m_data(1)
     // filled by key1 may left m_data(2), m_data(2) to be meaningful 0
     var i = 0
     while (i < m_data.length) {
-      var n = 0
-      while (n < nValues) {
-        m_data(i + 1 + n) = NO_VALUE
-        n += 1
-      }
-      i += (1 + n)
+      m_data(i + 1) = NO_VALUE
+      i += 2
     }
   }
 
@@ -339,17 +336,17 @@ final class IntIntMap(initSize: Int, nValues: Int, fillFactor: Float = 0.75f) {
     */
   private def getStartIndex(key: Int): Int = {
     if (isCapacityByPowTwo) {
-      (phiMix(key) & m_mask) * (1 + nValues)
+      (phiMix(key) & m_mask) * 2
     } else {
-      (phiMix(key) % m_mask) * (1 + nValues)
+      (phiMix(key) % m_mask) * 2
     }
   }
 
   private def getNextIndex(currentIndex: Int): Int = {
     if (isCapacityByPowTwo) {
-      (currentIndex + 1 + nValues) & m_mask2
+      (currentIndex + 2) & m_mask2
     } else {
-      (currentIndex + 1 + nValues) % m_mask2
+      (currentIndex + 2) % m_mask2
     }
   }
 }
